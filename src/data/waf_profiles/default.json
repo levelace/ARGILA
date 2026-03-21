@@ -1,0 +1,14 @@
+{
+  "cloudflare": {
+    "mutations": ["double_encode", "case_variation", "unicode_normalize"]
+  },
+  "akamai": {
+    "mutations": ["chunked_encoding", "space_substitute", "param_pollution"]
+  },
+  "aws_waf": {
+    "mutations": ["hex_encode_path", "tab_substitute"]
+  },
+  "nginx_modsec": {
+    "mutations": ["null_byte", "overlong_utf8"]
+  }
+}

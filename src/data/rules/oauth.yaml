@@ -1,0 +1,37 @@
+- id: OAUTH-001
+  name: "Open Redirect via redirect_uri Fragment Injection"
+  severity: CRITICAL
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N"
+  category: OAuth
+  description: "The application is vulnerable to open redirect via the redirect_uri parameter. An attacker can inject a fragment to leak the authorization code to an external domain."
+  attack_vector: redirect_uri_manipulation
+  conditions:
+    - type: status_code
+      operator: in
+      values: [301, 302, 303, 307]
+    - type: response_match
+      target: responseHeaders.location
+      pattern: "^https?://"
+    - type: param_reflection
+      param: redirect_uri
+      in: [query, body]
+  requires_probe: oauth_redirect_bypass
+  remediation: "Enforce exact-match whitelist validation on redirect_uri. Use registered client URIs only."
+  references:
+    - "https://datatracker.ietf.org/doc/html/rfc6749#section-10.6"
+    - "https://portswigger.net/web-security/oauth"
+
+- id: OAUTH-002
+  name: "CSRF via Missing state Parameter"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+  category: OAuth
+  description: "The OAuth authorization request is missing the state parameter, making it vulnerable to CSRF attacks during the authentication flow."
+  conditions:
+    - type: param_absent
+      param: state
+      in: [query]
+      endpoint_pattern: "/authorize"
+  remediation: "Generate cryptographically random state per authorization request. Validate on callback."
+  references:
+    - "https://portswigger.net/web-security/oauth"

