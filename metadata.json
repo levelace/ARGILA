@@ -1,0 +1,5 @@
+{
+  "name": "ARES: Advanced Research & Exploitation Suite",
+  "description": "A high-performance offensive security framework designed for expert SecOps and bug bounty hunting, featuring target-specific auditing modules and automated payload generation.",
+  "requestFramePermissions": []
+}
