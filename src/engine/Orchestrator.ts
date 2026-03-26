@@ -69,6 +69,7 @@ export class Orchestrator {
     const host = session.target.host.replace(/^https?:\/\//, '').split('/')[0];
 
     // Phase 1: DNS
+    this.emitter.info(`PROGRESS:10`);
     this.emitter.info(`[PHASE 1] Starting DNS reconnaissance for ${host}...`);
     try {
       const records: any = {};
@@ -95,6 +96,7 @@ export class Orchestrator {
     }
 
     // Phase 2: HTTP Discovery
+    this.emitter.info(`PROGRESS:20`);
     this.emitter.info(`[PHASE 2] Probing HTTP/HTTPS endpoints...`);
     const protocols = ['https', 'http'];
     let activeUrl = '';
@@ -124,6 +126,7 @@ export class Orchestrator {
     }
 
     // Phase 3: WAF Fingerprint
+    this.emitter.info(`PROGRESS:30`);
     this.emitter.info(`[PHASE 3] Profiling security perimeter (WAF)...`);
     const wafVendor = await this.wafProfiler.fingerprint(host, {
       get: async (url: string) => {
@@ -147,6 +150,7 @@ export class Orchestrator {
     }
 
     // Phase 4: Endpoint Discovery
+    this.emitter.info(`PROGRESS:40`);
     this.emitter.info(`[PHASE 4] Initiating endpoint discovery...`);
     const commonPaths = [
       '/.well-known/openid-configuration',
@@ -158,6 +162,7 @@ export class Orchestrator {
     ];
 
     const probeResults: ProbeResult[] = [];
+
     for (const path of commonPaths) {
       try {
         const url = `${activeUrl}${path}`;
@@ -182,6 +187,7 @@ export class Orchestrator {
     }
 
     // Phase 5: Vulnerability Analysis
+    this.emitter.info(`PROGRESS:60`);
     this.emitter.info(`[PHASE 5] Running rule engine against discovered endpoints...`);
     for (const probe of probeResults) {
       const newFindings = this.ruleEngine.evaluate(probe);
@@ -193,6 +199,7 @@ export class Orchestrator {
     }
 
     // Phase 6: Exploit Chain Correlation
+    this.emitter.info(`PROGRESS:85`);
     this.emitter.info(`[PHASE 6] Performing exploit chain correlation...`);
     const chains = this.chainBuilder.buildChains(this.findings.all());
     for (const chain of chains) {
@@ -212,6 +219,7 @@ export class Orchestrator {
       }
     };
 
+    this.emitter.info(`PROGRESS:100`);
     this.emitter.info(`[ASE] Audit complete. ${finalResult.findings.length} findings, ${finalResult.chains.length} chains.`);
     return finalResult;
   }

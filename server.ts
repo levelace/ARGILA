@@ -42,7 +42,11 @@ async function startServer() {
         if (msg.type === "PIPE_PAYLOAD") {
           const { url, payload } = msg;
           try {
-            const res = await axios.get(url + payload, { 
+            const fullUrl = url.includes('?')
+              ? `${url}${payload.startsWith('&') ? payload : '&' + payload}`
+              : `${url}${payload.startsWith('?') ? payload : '?' + payload}`;
+
+            const res = await axios.get(fullUrl, {
               timeout: 10000, 
               validateStatus: () => true,
               headers: { 'User-Agent': 'Argila-Sentinel-Engine/3.0' }
@@ -65,8 +69,16 @@ async function startServer() {
             }
           }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("[ASE] WS Message Error:", e);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "LOG",
+            level: "error",
+            line: `[SYSTEM_ERROR] ${e.message}`,
+            ts: Date.now()
+          }));
+        }
       }
     });
 
