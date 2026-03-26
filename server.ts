@@ -69,16 +69,8 @@ async function startServer() {
             }
           }
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("[ASE] WS Message Error:", e);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "LOG",
-            level: "error",
-            line: `[SYSTEM_ERROR] ${e.message}`,
-            ts: Date.now()
-          }));
-        }
       }
     });
 
