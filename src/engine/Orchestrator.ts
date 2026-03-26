@@ -149,31 +149,61 @@ export class Orchestrator {
       this.emitter.info(`[WAF] No known WAF signatures identified. Direct access probable.`);
     }
 
-    // Phase 4: Endpoint Discovery
+    // Phase 4: Endpoint Discovery (Wordlist expansion)
     this.emitter.info(`PROGRESS:40`);
-    this.emitter.info(`[PHASE 4] Initiating endpoint discovery...`);
-    const commonPaths = [
+    this.emitter.info(`[PHASE 4] Initiating targeted endpoint discovery...`);
+    const wordlist = [
       '/.well-known/openid-configuration',
       '/.well-known/assetlinks.json',
+      '/.git/config',
+      '/.env',
       '/api/v1/health',
+      '/api/v1/users',
+      '/admin',
+      '/administrator',
+      '/login',
       '/authorize',
       '/token',
-      '/callback'
+      '/callback',
+      '/config',
+      '/info.php',
+      '/phpinfo.php',
+      '/.htaccess',
+      '/robots.txt',
+      '/sitemap.xml'
     ];
 
-    const probeResults: ProbeResult[] = [];
+    if (session.deepScan) {
+      wordlist.push(
+        '/api/v1/admin',
+        '/backup',
+        '/v2/authorize',
+        '/.aws/credentials',
+        '/server-status',
+        '/actuator/health'
+      );
+    }
 
-    for (const path of commonPaths) {
+    const probeResults: ProbeResult[] = [];
+    const scanDelay = session.stealth ? 1500 : 300;
+
+    for (const path of wordlist) {
       try {
         const url = `${activeUrl}${path}`;
+        this.emitter.info(`[RECON] Probing: ${path}`);
+
         const res = await axios.get(url, { 
-          timeout: 3000, 
+          timeout: 4000,
           validateStatus: () => true,
-          headers: { 'User-Agent': 'Argila-Sentinel-Engine/3.0' }
+          headers: {
+            'User-Agent': session.stealth
+              ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+              : 'Argila-Sentinel-Engine/3.0'
+          }
         });
         
         if (res.status !== 404) {
-          this.emitter.info(`[RECON] Found endpoint: ${path} (Status: ${res.status})`);
+          this.emitter.success(`[RECON] Found endpoint: ${path} (Status: ${res.status})`);
           probeResults.push({
             probeId: 'recon_discovery',
             endpoint: path,
@@ -183,19 +213,25 @@ export class Orchestrator {
             params: { query: {} }
           });
         }
-      } catch (e) {}
+      } catch (e) {
+        this.emitter.warn(`[RECON] Skip path ${path}: Unreachable or timed out`);
+      } finally {
+        await this.sleep(scanDelay);
+      }
     }
 
     // Phase 5: Vulnerability Analysis
     this.emitter.info(`PROGRESS:60`);
-    this.emitter.info(`[PHASE 5] Running rule engine against discovered endpoints...`);
+    this.emitter.info(`[PHASE 5] Running intensive rule engine against ${probeResults.length} endpoints...`);
     for (const probe of probeResults) {
+      this.emitter.info(`[AUDIT] Evaluating: ${probe.endpoint}`);
       const newFindings = this.ruleEngine.evaluate(probe);
       for (const finding of newFindings) {
         finding.cvssScore = this.scorer.score(finding.cvss);
         this.findings.add(finding);
         this.emitter.success(`[FIND] ${finding.ruleId}: ${finding.name} — CVSS ${finding.cvssScore}`);
       }
+      if (session.deepScan) await this.sleep(100);
     }
 
     // Phase 6: Exploit Chain Correlation

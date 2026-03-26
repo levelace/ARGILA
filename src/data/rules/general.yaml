@@ -1,0 +1,60 @@
+- id: GEN-001
+  name: "Sensitive Path Exposure"
+  severity: MEDIUM
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+  category: Information Disclosure
+  description: "A sensitive file or directory (e.g., .git, .env, admin) was found to be publicly accessible, potentially exposing configuration or internal data."
+  conditions:
+    - type: status_code
+      operator: in
+      values: [200]
+    - type: or
+      sub:
+        - type: response_match
+          target: endpoint
+          pattern: "(\\.git|\\.env|\\.htaccess|config|admin|administrator|backup|credentials)"
+        - type: response_match
+          target: responseBody
+          pattern: "(DB_PASSWORD|AWS_SECRET|GIT_CONFIG)"
+  remediation: "Restrict access to sensitive files using web server configuration (e.g., .htaccess or nginx location blocks)."
+  references:
+    - "https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Exposure"
+
+- id: GEN-002
+  name: "Missing Security Headers"
+  severity: LOW
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N"
+  category: Security Misconfiguration
+  description: "Critical security headers such as Content-Security-Policy or X-Frame-Options are missing, increasing the risk of XSS or Clickjacking."
+  conditions:
+    - type: status_code
+      operator: in
+      values: [200]
+    - type: or
+      sub:
+        - type: header_absent
+          header: Content-Security-Policy
+        - type: header_absent
+          header: X-Frame-Options
+        - type: header_absent
+          header: X-Content-Type-Options
+  remediation: "Configure the web server to send standard security headers with every response."
+  references:
+    - "https://owasp.org/www-project-secure-headers/"
+
+- id: GEN-003
+  name: "Server Version Disclosure"
+  severity: INFO
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+  category: Information Disclosure
+  description: "The 'Server' or 'X-Powered-By' header reveals specific version information about the underlying infrastructure."
+  conditions:
+    - type: status_code
+      operator: in
+      values: [200]
+    - type: response_match
+      target: responseHeaders.server
+      pattern: "[0-9]+\\.[0-9]+"
+  remediation: "Disable or sanitize server signature headers in your web server configuration."
+  references:
+    - "https://owasp.org/www-project-top-ten/2017/A6_2017-Security_Misconfiguration"
