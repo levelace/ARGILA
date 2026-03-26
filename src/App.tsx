@@ -164,7 +164,7 @@ export default function App() {
     setFindings([]);
     setChains([]);
     
-    // Ensure host has protocol for backend
+    // Ensure host has protocol
     const host = selectedTarget.host.startsWith('http')
       ? selectedTarget.host
       : `https://${selectedTarget.host}`;
