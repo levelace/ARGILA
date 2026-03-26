@@ -42,7 +42,11 @@ async function startServer() {
         if (msg.type === "PIPE_PAYLOAD") {
           const { url, payload } = msg;
           try {
-            const res = await axios.get(url + payload, { 
+            const fullUrl = url.includes('?')
+              ? `${url}${payload.startsWith('&') ? payload : '&' + payload}`
+              : `${url}${payload.startsWith('?') ? payload : '?' + payload}`;
+
+            const res = await axios.get(fullUrl, {
               timeout: 10000, 
               validateStatus: () => true,
               headers: { 'User-Agent': 'Argila-Sentinel-Engine/3.0' }

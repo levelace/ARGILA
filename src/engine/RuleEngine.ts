@@ -99,8 +99,18 @@ export class RuleEngine {
     return findings;
   }
 
+  private resolveValue(path: string, obj: any): any {
+    return path.split('.').reduce((prev, curr) => {
+      return prev ? prev[curr] : undefined;
+    }, obj);
+  }
+
   private allConditionsMet(conditions: Condition[], result: ProbeResult): boolean {
-    return conditions.every(c => this.evaluateCondition(c, result));
+    return conditions.every(c => this.allConditionsMetInGroup(c, result));
+  }
+
+  private allConditionsMetInGroup(c: Condition, result: ProbeResult): boolean {
+    return this.evaluateCondition(c, result);
   }
 
   private evaluateCondition(c: Condition, r: ProbeResult): boolean {
@@ -112,7 +122,7 @@ export class RuleEngine {
             : r.statusCode === c.value;
 
         case 'response_match':
-          const target = r[c.target as keyof ProbeResult] as string ?? '';
+          const target = this.resolveValue(c.target, r) ?? '';
           return new RegExp(c.pattern, 'i').test(target);
 
         case 'param_reflection':
@@ -126,7 +136,7 @@ export class RuleEngine {
           ) && new RegExp(c.endpoint_pattern ?? '').test(r.endpoint);
 
         case 'not_contains':
-          return !(r[c.target as keyof ProbeResult] as string ?? '').includes(c.value);
+          return !(this.resolveValue(c.target, r) ?? '').includes(c.value);
 
         case 'header_absent':
           return !r.responseHeaders?.[c.header.toLowerCase()];
