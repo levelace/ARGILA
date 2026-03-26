@@ -145,8 +145,11 @@ export class RuleEngine {
         case 'not_contains':
           return !(this.resolveValue(c.target, r) ?? '').includes(c.value);
 
+        case 'header_present':
+          return !!this.resolveValue(`responseHeaders.${c.header}`, r);
+
         case 'header_absent':
-          return !r.responseHeaders?.[c.header.toLowerCase()];
+          return !this.resolveValue(`responseHeaders.${c.header}`, r);
 
         case 'header_value':
           const hv = r.responseHeaders?.[c.header.toLowerCase()] ?? '';

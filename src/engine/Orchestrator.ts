@@ -193,14 +193,28 @@ export class Orchestrator {
         const url = `${activeUrl}${path}`;
         this.emitter.info(`[RECON] Probing: ${path}`);
 
+        const headers: Record<string, string> = {
+          'User-Agent': session.stealth
+            ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            : 'Argila-Sentinel-Engine/3.0'
+        };
+
+        if (session.deepScan) {
+          // Hardened Security Bypass Headers
+          headers['X-Forwarded-For'] = '127.0.0.1';
+          headers['X-Originating-IP'] = '127.0.0.1';
+          headers['X-Remote-IP'] = '127.0.0.1';
+          headers['X-Remote-Addr'] = '127.0.0.1';
+          headers['X-Client-IP'] = '127.0.0.1';
+          headers['X-Forwarded-Host'] = 'localhost';
+          headers['X-Original-URL'] = path;
+          headers['X-Rewrite-URL'] = path;
+        }
+
         const res = await axios.get(url, { 
           timeout: 4000,
           validateStatus: () => true,
-          headers: {
-            'User-Agent': session.stealth
-              ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-              : 'Argila-Sentinel-Engine/3.0'
-          }
+          headers
         });
         
         if (res.status !== 404) {
