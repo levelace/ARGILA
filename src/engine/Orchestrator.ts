@@ -163,11 +163,6 @@ export class Orchestrator {
 
     const probeResults: ProbeResult[] = [];
 
-    // Targeted OAuth Probe to ensure OAUTH-001 triggers if endpoint exists
-    if (session.deepScan) {
-      commonPaths.push('/oauth/authorize?redirect_uri=https://figma.com.attacker.com/callback');
-    }
-
     for (const path of commonPaths) {
       try {
         const url = `${activeUrl}${path}`;
