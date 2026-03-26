@@ -66,17 +66,18 @@ export class Orchestrator {
     this.emitter.info(`[ASE] Argila Sentinel Engine v3.0 — session ${session.id}`);
     this.emitter.info(`[ASE] Target: ${session.target.host} | Mode: ${session.deepScan ? 'DEEP' : 'SURFACE'} | Stealth: ${session.stealth}`);
 
-    const host = session.target.host.replace(/^https?:\/\//, '').split('/')[0];
+    const fullHost = session.target.host.replace(/^https?:\/\//, '').split('/')[0];
+    const dnsHost = fullHost.split(':')[0]; // Pure hostname for DNS checks
 
     // Phase 1: DNS
     this.emitter.info(`PROGRESS:10`);
-    this.emitter.info(`[PHASE 1] Starting DNS reconnaissance for ${host}...`);
+    this.emitter.info(`[PHASE 1] Starting DNS reconnaissance for ${dnsHost}...`);
     try {
       const records: any = {};
       const [a, mx, txt] = await Promise.allSettled([
-        dnsPromises.resolve4(host),
-        dnsPromises.resolveMx(host),
-        dnsPromises.resolveTxt(host)
+        dnsPromises.resolve4(dnsHost),
+        dnsPromises.resolveMx(dnsHost),
+        dnsPromises.resolveTxt(dnsHost)
       ]);
 
       if (a.status === 'fulfilled') {
@@ -97,14 +98,14 @@ export class Orchestrator {
 
     // Phase 2: HTTP Discovery
     this.emitter.info(`PROGRESS:20`);
-    this.emitter.info(`[PHASE 2] Probing HTTP/HTTPS endpoints...`);
+    this.emitter.info(`[PHASE 2] Probing HTTP/HTTPS endpoints for ${fullHost}...`);
     const protocols = ['https', 'http'];
     let activeUrl = '';
     let serverHeader = 'Unknown';
 
     for (const proto of protocols) {
       try {
-        const url = `${proto}://${host}`;
+        const url = `${proto}://${fullHost}`;
         const res = await axios.get(url, { 
           timeout: 5000, 
           validateStatus: () => true,
@@ -116,7 +117,7 @@ export class Orchestrator {
         this.emitter.info(`[HTTP] Server: ${serverHeader}`);
         break;
       } catch (e) {
-        this.emitter.warn(`[HTTP] ${proto}://${host} unreachable.`);
+        this.emitter.warn(`[HTTP] ${proto}://${fullHost} unreachable.`);
       }
     }
 
@@ -128,7 +129,7 @@ export class Orchestrator {
     // Phase 3: WAF Fingerprint
     this.emitter.info(`PROGRESS:30`);
     this.emitter.info(`[PHASE 3] Profiling security perimeter (WAF)...`);
-    const wafVendor = await this.wafProfiler.fingerprint(host, {
+    const wafVendor = await this.wafProfiler.fingerprint(fullHost, {
       get: async (url: string) => {
         const res = await axios.get(url, { 
           timeout: 5000, 
@@ -204,14 +205,40 @@ export class Orchestrator {
         
         if (res.status !== 404) {
           this.emitter.success(`[RECON] Found endpoint: ${path} (Status: ${res.status})`);
+
+          const params: any = { query: {} };
+          if (path.includes('?')) {
+            const queryPart = path.split('?')[1];
+            queryPart.split('&').forEach(pair => {
+              const [k, v] = pair.split('=');
+              params.query[k] = decodeURIComponent(v || '');
+            });
+          }
+
           probeResults.push({
             probeId: 'recon_discovery',
             endpoint: path,
             statusCode: res.status,
             responseHeaders: res.headers as any,
             responseBody: typeof res.data === 'string' ? res.data : JSON.stringify(res.data),
-            params: { query: {} }
+            params
           });
+
+          // Dynamic Targeted Probing: Trigger specific audits based on discovery
+          if (path.includes('/authorize') || path.includes('/oauth')) {
+            this.emitter.info(`[AUDIT] Potential OAuth endpoint found. Scheduling targeted bypass probe...`);
+            const oauthProbeUrl = `${activeUrl}${path}${path.includes('?') ? '&' : '?'}redirect_uri=https://figma.com.attacker.com/callback`;
+            const oauthRes = await axios.get(oauthProbeUrl, { timeout: 5000, validateStatus: () => true });
+
+            probeResults.push({
+              probeId: 'oauth_redirect_bypass',
+              endpoint: path,
+              statusCode: oauthRes.status,
+              responseHeaders: oauthRes.headers as any,
+              responseBody: typeof oauthRes.data === 'string' ? oauthRes.data : JSON.stringify(oauthRes.data),
+              params: { query: { redirect_uri: 'https://figma.com.attacker.com/callback' } }
+            });
+          }
         }
       } catch (e) {
         this.emitter.warn(`[RECON] Skip path ${path}: Unreachable or timed out`);
@@ -222,9 +249,9 @@ export class Orchestrator {
 
     // Phase 5: Vulnerability Analysis
     this.emitter.info(`PROGRESS:60`);
-    this.emitter.info(`[PHASE 5] Running intensive rule engine against ${probeResults.length} endpoints...`);
+    this.emitter.info(`[PHASE 5] Running intensive rule engine against ${probeResults.length} audit targets...`);
     for (const probe of probeResults) {
-      this.emitter.info(`[AUDIT] Evaluating: ${probe.endpoint}`);
+      this.emitter.info(`[AUDIT] Evaluating: ${probe.endpoint} (Probe: ${probe.probeId})`);
       const newFindings = this.ruleEngine.evaluate(probe);
       for (const finding of newFindings) {
         finding.cvssScore = this.scorer.score(finding.cvss);
@@ -244,7 +271,7 @@ export class Orchestrator {
 
     const finalResult: ScanResult = {
       sessionId: session.id,
-      target: host,
+      target: fullHost,
       findings: this.findings.all(),
       chains,
       summary: {
