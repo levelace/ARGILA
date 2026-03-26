@@ -69,7 +69,7 @@ export class Orchestrator {
     const host = session.target.host.replace(/^https?:\/\//, '').split('/')[0];
 
     // Phase 1: DNS
-    this.emitter.emit('raw', 'PROGRESS:10');
+    this.emitter.info(`PROGRESS:10`);
     this.emitter.info(`[PHASE 1] Starting DNS reconnaissance for ${host}...`);
     try {
       const records: any = {};
@@ -96,7 +96,7 @@ export class Orchestrator {
     }
 
     // Phase 2: HTTP Discovery
-    this.emitter.emit('raw', 'PROGRESS:25');
+    this.emitter.info(`PROGRESS:20`);
     this.emitter.info(`[PHASE 2] Probing HTTP/HTTPS endpoints...`);
     const protocols = ['https', 'http'];
     let activeUrl = '';
@@ -126,7 +126,7 @@ export class Orchestrator {
     }
 
     // Phase 3: WAF Fingerprint
-    this.emitter.emit('raw', 'PROGRESS:40');
+    this.emitter.info(`PROGRESS:30`);
     this.emitter.info(`[PHASE 3] Profiling security perimeter (WAF)...`);
     const wafVendor = await this.wafProfiler.fingerprint(host, {
       get: async (url: string) => {
@@ -150,7 +150,7 @@ export class Orchestrator {
     }
 
     // Phase 4: Endpoint Discovery
-    this.emitter.emit('raw', 'PROGRESS:60');
+    this.emitter.info(`PROGRESS:40`);
     this.emitter.info(`[PHASE 4] Initiating endpoint discovery...`);
     const commonPaths = [
       '/.well-known/openid-configuration',
@@ -162,6 +162,12 @@ export class Orchestrator {
     ];
 
     const probeResults: ProbeResult[] = [];
+
+    // Targeted OAuth Probe to ensure OAUTH-001 triggers if endpoint exists
+    if (session.deepScan) {
+      commonPaths.push('/oauth/authorize?redirect_uri=https://figma.com.attacker.com/callback');
+    }
+
     for (const path of commonPaths) {
       try {
         const url = `${activeUrl}${path}`;
@@ -185,30 +191,8 @@ export class Orchestrator {
       } catch (e) {}
     }
 
-    // Phase 4.5: Targeted OAuth Probes
-    if (probeResults.some(p => p.endpoint === '/authorize')) {
-      this.emitter.info(`[PHASE 4.5] OAuth endpoint detected. Performing targeted probes...`);
-      try {
-        const oauthUrl = `${activeUrl}/authorize?client_id=123&redirect_uri=https://attacker.com/%23.${host}`;
-        const res = await axios.get(oauthUrl, {
-          timeout: 5000,
-          validateStatus: () => true,
-          headers: { 'User-Agent': 'Argila-Sentinel-Engine/3.0' }
-        });
-
-        probeResults.push({
-          probeId: 'oauth_redirect_bypass',
-          endpoint: '/authorize',
-          statusCode: res.status,
-          responseHeaders: res.headers as any,
-          responseBody: typeof res.data === 'string' ? res.data : JSON.stringify(res.data),
-          params: { query: { redirect_uri: `https://attacker.com/%23.${host}` } }
-        });
-      } catch (e) {}
-    }
-
     // Phase 5: Vulnerability Analysis
-    this.emitter.emit('raw', 'PROGRESS:80');
+    this.emitter.info(`PROGRESS:60`);
     this.emitter.info(`[PHASE 5] Running rule engine against discovered endpoints...`);
     for (const probe of probeResults) {
       const newFindings = this.ruleEngine.evaluate(probe);
@@ -216,39 +200,11 @@ export class Orchestrator {
         finding.cvssScore = this.scorer.score(finding.cvss);
         this.findings.add(finding);
         this.emitter.success(`[FIND] ${finding.ruleId}: ${finding.name} — CVSS ${finding.cvssScore}`);
-
-        // Automated Payload Generation & Validation
-        if (finding.severity === 'CRITICAL' || finding.severity === 'HIGH') {
-          const attackVector = finding.ruleId.startsWith('OAUTH') ? 'redirect_uri_manipulation' : '';
-          if (attackVector) {
-            this.emitter.info(`[AUTO] Generating exploit payloads for ${finding.ruleId}...`);
-            const payloads = this.payloadMutator.generate(attackVector, {
-              host,
-              waf: wafVendor,
-              endpoint: finding.endpoint
-            });
-
-            for (const payload of payloads.slice(0, 3)) { // Limit to 3 for brevity
-              this.emitter.info(`[TEST] Trying payload: ${payload.name}`);
-              try {
-                const testUrl = activeUrl + finding.endpoint + (finding.endpoint.includes('?') ? '&' : '?') + `redirect_uri=${encodeURIComponent(payload.content)}`;
-                const res = await axios.get(testUrl, {
-                  timeout: 3000,
-                  validateStatus: () => true,
-                  headers: { 'User-Agent': 'Argila-Sentinel-Engine/3.0' }
-                });
-                if (res.status === 302 && res.headers.location?.includes('attacker.com')) {
-                  this.emitter.success(`[EXPLOIT] Verified bypass using ${payload.name}!`);
-                }
-              } catch (e) {}
-            }
-          }
-        }
       }
     }
 
     // Phase 6: Exploit Chain Correlation
-    this.emitter.emit('raw', 'PROGRESS:95');
+    this.emitter.info(`PROGRESS:85`);
     this.emitter.info(`[PHASE 6] Performing exploit chain correlation...`);
     const chains = this.chainBuilder.buildChains(this.findings.all());
     for (const chain of chains) {
@@ -268,6 +224,7 @@ export class Orchestrator {
       }
     };
 
+    this.emitter.info(`PROGRESS:100`);
     this.emitter.info(`[ASE] Audit complete. ${finalResult.findings.length} findings, ${finalResult.chains.length} chains.`);
     return finalResult;
   }
