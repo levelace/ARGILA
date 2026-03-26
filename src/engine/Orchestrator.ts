@@ -71,7 +71,7 @@ export class Orchestrator {
 
     // Phase 1: DNS
     this.emitter.info(`PROGRESS:10`);
-    this.emitter.info(`[PHASE 1] Starting DNS reconnaissance for ${dnsHost}...`);
+    this.emitter.info(`[PHASE 1] Starting DNS reconnaissance for ${host}...`);
     try {
       const records: any = {};
       const [a, mx, txt] = await Promise.allSettled([
@@ -98,7 +98,7 @@ export class Orchestrator {
 
     // Phase 2: HTTP Discovery
     this.emitter.info(`PROGRESS:20`);
-    this.emitter.info(`[PHASE 2] Probing HTTP/HTTPS endpoints for ${fullHost}...`);
+    this.emitter.info(`[PHASE 2] Probing HTTP/HTTPS endpoints...`);
     const protocols = ['https', 'http'];
     let activeUrl = '';
     let serverHeader = 'Unknown';
@@ -150,10 +150,10 @@ export class Orchestrator {
       this.emitter.info(`[WAF] No known WAF signatures identified. Direct access probable.`);
     }
 
-    // Phase 4: Endpoint Discovery (Wordlist expansion)
+    // Phase 4: Endpoint Discovery
     this.emitter.info(`PROGRESS:40`);
-    this.emitter.info(`[PHASE 4] Initiating targeted endpoint discovery...`);
-    const wordlist = [
+    this.emitter.info(`[PHASE 4] Initiating endpoint discovery...`);
+    const commonPaths = [
       '/.well-known/openid-configuration',
       '/.well-known/assetlinks.json',
       '/.git/config',
@@ -186,9 +186,8 @@ export class Orchestrator {
     }
 
     const probeResults: ProbeResult[] = [];
-    const scanDelay = session.stealth ? 1500 : 300;
 
-    for (const path of wordlist) {
+    for (const path of commonPaths) {
       try {
         const url = `${activeUrl}${path}`;
         this.emitter.info(`[RECON] Probing: ${path}`);
@@ -263,7 +262,7 @@ export class Orchestrator {
 
     // Phase 5: Vulnerability Analysis
     this.emitter.info(`PROGRESS:60`);
-    this.emitter.info(`[PHASE 5] Running intensive rule engine against ${probeResults.length} audit targets...`);
+    this.emitter.info(`[PHASE 5] Running rule engine against discovered endpoints...`);
     for (const probe of probeResults) {
       this.emitter.info(`[AUDIT] Evaluating: ${probe.endpoint} (Probe: ${probe.probeId})`);
       const newFindings = this.ruleEngine.evaluate(probe);

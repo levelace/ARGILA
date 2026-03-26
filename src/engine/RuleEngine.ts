@@ -100,15 +100,8 @@ export class RuleEngine {
   }
 
   private resolveValue(path: string, obj: any): any {
-    if (!path) return undefined;
     return path.split('.').reduce((prev, curr) => {
-      if (!prev) return undefined;
-      // Handle case-insensitive header lookup if target is responseHeaders
-      if (typeof prev === 'object' && !Array.isArray(prev)) {
-        const foundKey = Object.keys(prev).find(k => k.toLowerCase() === curr.toLowerCase());
-        if (foundKey) return prev[foundKey];
-      }
-      return prev[curr];
+      return prev ? prev[curr] : undefined;
     }, obj);
   }
 
@@ -144,9 +137,6 @@ export class RuleEngine {
 
         case 'not_contains':
           return !(this.resolveValue(c.target, r) ?? '').includes(c.value);
-
-        case 'header_present':
-          return !!this.resolveValue(`responseHeaders.${c.header}`, r);
 
         case 'header_absent':
           return !this.resolveValue(`responseHeaders.${c.header}`, r);
