@@ -1,0 +1,252 @@
+- id: ADV-001
+  name: "Cloud Metadata Service (IMDSv1) Exposure"
+  severity: CRITICAL
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N"
+  category: SSRF
+  description: "The application allows access to the Cloud Metadata Service (IMDSv1) without requiring a token header. This can lead to full IAM role credential theft via SSRF."
+  conditions:
+    - type: status_code
+      operator: in
+      values: [200]
+    - type: or
+      sub:
+        - type: response_match
+          target: endpoint
+          pattern: "/latest/meta-data/"
+        - type: response_match
+          target: responseBody
+          pattern: "ami-id|iam/security-credentials"
+  remediation: "Enforce IMDSv2 (Session Tokens) and disable IMDSv1. Restrict outbound access to 169.254.169.254."
+  references:
+    - "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html"
+
+- id: ADV-002
+  name: "JWT Algorithm Confusion (RS256 to HS256)"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+  category: Authentication
+  description: "The backend may be vulnerable to JWT Algorithm Confusion, where it verifies RS256-signed tokens using the HS256 algorithm and the server's public key as the secret."
+  conditions:
+    - type: header_present
+      header: Authorization
+    - type: response_match
+      target: responseBody
+      pattern: "eyJhbGciOiJIUzI1NiJ9"
+  remediation: "Explicitly define allowed algorithms (e.g., ['RS256']) in the JWT verification call. Do not allow the 'alg' header to dictate the algorithm."
+  references:
+    - "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/"
+
+- id: ADV-003
+  name: "Prototype Pollution (Client-Side/Server-Side)"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+  category: Injection
+  description: "The application appears to merge user-controlled objects recursively without sanitizing '__proto__', leading to Prototype Pollution which can cause DoS or RCE."
+  conditions:
+    - type: or
+      sub:
+        - type: param_reflection
+          param: "__proto__"
+          in: [query, body]
+        - type: param_reflection
+          param: "constructor.prototype"
+          in: [query, body]
+  remediation: "Use 'Object.create(null)' for data objects, or use library-specific sanitization (e.g., lodash.merge with safety checks)."
+  references:
+    - "https://portswigger.net/web-security/prototype-pollution"
+
+- id: ADV-004
+  name: "HTTP Request Smuggling (CL.TE / TE.CL)"
+  severity: CRITICAL
+  cvss: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:H"
+  category: Request Smuggling
+  description: "Discrepancies in how the front-end and back-end servers interpret the Transfer-Encoding and Content-Length headers may allow an attacker to 'smuggle' a request to the back-end."
+  conditions:
+    - type: and
+      sub:
+        - type: header_present
+          header: "Transfer-Encoding"
+        - type: status_code
+          operator: in
+          values: [200, 404, 500]
+        - type: response_match
+          target: responseBody
+          pattern: "(Unrecognized|Invalid) Transfer-Encoding"
+  remediation: "Disable Transfer-Encoding if not needed. Ensure both servers support HTTP/2 or use a consistent parser for TE/CL headers."
+  references:
+    - "https://portswigger.net/web-security/request-smuggling"
+
+- id: ADV-005
+  name: "Web Cache Deception"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:N/A:N"
+  category: Information Disclosure
+  description: "The application misinterprets static extensions in URLs (e.g., .css, .jpg) and returns sensitive data while the cache stores it, allowing anyone to retrieve the cached sensitive response."
+  conditions:
+    - type: and
+      sub:
+        - type: response_match
+          target: endpoint
+          pattern: "\\.(css|js|png|jpg|gif|txt)/.*"
+        - type: status_code
+          operator: in
+          values: [200]
+        - type: header_present
+          header: "X-Cache"
+  remediation: "Configure the cache to ignore paths with certain extensions if they don't match the actual content type. Use 'Cache-Control: private'."
+  references:
+    - "https://www.blackhat.com/docs/us-17/materials/us-17-Gil-Web-Cache-Deception-Attack-wp.pdf"
+
+- id: ADV-006
+  name: "Bypass via Hop-by-Hop Header Injection"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+  category: Security Bypass
+  description: "The application allows manipulation of hop-by-hop headers via the 'Connection' header. This can be used to bypass security controls by stripping critical headers like 'X-Forwarded-For' or 'Authorization' before they reach the backend."
+  conditions:
+    - type: and
+      sub:
+        - type: header_present
+          header: "Connection"
+        - type: response_match
+          target: responseBody
+          pattern: "stripped|unauthorized|missing header"
+  remediation: "Configure proxies and load balancers to ignore or strictly validate hop-by-hop headers. Use fixed header whitelists."
+  references:
+    - "https://nathandavison.com/blog/abusing-http-hop-by-hop-request-headers"
+
+- id: ADV-007
+  name: "Host Header Injection / SSRF via Proxy-Host"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:L/A:N"
+  category: SSRF
+  description: "The application trusts non-standard host headers like 'X-Forwarded-Host' or 'X-Host', which can lead to web cache poisoning or SSRF if used for absolute URL generation."
+  conditions:
+    - type: or
+      sub:
+        - type: header_present
+          header: "X-Forwarded-Host"
+        - type: header_present
+          header: "X-Host"
+  remediation: "Validate the Host header against a whitelist of known domains. Disable support for non-standard host headers."
+  references:
+    - "https://portswigger.net/web-security/host-header-injection"
+
+- id: ADV-008
+  name: "GraphQL Introspection Enabled"
+  severity: MEDIUM
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+  category: Information Disclosure
+  description: "GraphQL introspection is enabled on this endpoint, allowing anyone to query the entire schema, including all types, fields, and queries."
+  conditions:
+    - type: and
+      sub:
+        - type: response_match
+          target: responseBody
+          pattern: "__schema|__type|enumValues"
+        - type: status_code
+          operator: in
+          values: [200]
+  remediation: "Disable introspection in production environments. Use persisted queries or restricted schemas."
+  references:
+    - "https://graphql.org/learn/security/#introspection"
+
+- id: ADV-009
+  name: "Exposed Spring Boot Actuator"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L"
+  category: Information Disclosure
+  description: "Sensitive Spring Boot Actuator endpoints (e.g., /env, /heapdump, /configprops) are exposed, leaking environment variables, credentials, and memory contents."
+  conditions:
+    - type: or
+      sub:
+        - type: response_match
+          target: endpoint
+          pattern: "/actuator/(env|heapdump|configprops|trace)"
+        - type: response_match
+          target: responseBody
+          pattern: "systemProperties|activeProfiles|propertySources"
+  remediation: "Disable or protect actuator endpoints using Spring Security. Set 'management.endpoints.web.exposure.exclude=*'."
+  references:
+    - "https://docs.spring.io/spring-boot/docs/current/reference/html/actuator.html#actuator.endpoints"
+
+- id: ADV-010
+  name: "Jolokia JMX Bridge Exploitation"
+  severity: CRITICAL
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"
+  category: RCE
+  description: "The Jolokia JMX bridge is exposed, allowing remote management of the JVM. This can be exploited for RCE via MBean manipulation (e.g., Logback or Tomcat MBeans)."
+  conditions:
+    - type: and
+      sub:
+        - type: response_match
+          target: responseBody
+          pattern: "jolokia|agent|mbean"
+        - type: status_code
+          operator: in
+          values: [200]
+  remediation: "Disable the Jolokia agent or restrict access to localhost. Implement strong authentication if it must be exposed."
+  references:
+    - "https://jolokia.org/reference/html/security.html"
+
+- id: ADV-011
+  name: "Log4Shell (JNDI Injection) — Outbound Reflection"
+  severity: CRITICAL
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"
+  category: RCE
+  description: "The application reflects JNDI lookup patterns in logs or error messages. This indicates a potential vulnerability to Log4Shell (CVE-2021-44228) or similar JNDI injection flaws."
+  conditions:
+    - type: or
+      sub:
+        - type: param_reflection
+          param: "${jndi:ldap:"
+          in: [query, body]
+        - type: param_reflection
+          param: "${jndi:rmi:"
+          in: [query, body]
+  remediation: "Upgrade log4j to version 2.17.1 or higher. Set 'log4j2.formatMsgNoLookups=true' or remove the JndiLookup class."
+  references:
+    - "https://logging.apache.org/log4j/2.x/security.html"
+
+- id: ADV-012
+  name: "Server-Side Template Injection (SSTI)"
+  severity: HIGH
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+  category: Injection
+  description: "User input is reflected in a template expression (e.g., {{7*7}} or ${7*7}) and evaluated by the server, potentially leading to RCE."
+  conditions:
+    - type: and
+      sub:
+        - type: response_match
+          target: responseBody
+          pattern: "(49|7777777)"
+        - type: or
+          sub:
+            - type: param_reflection
+              param: "{{7*7}}"
+              in: [query, body]
+            - type: param_reflection
+              param: "${7*7}"
+              in: [query, body]
+  remediation: "Use logic-less templates. Sanitize all user input before passing it to the template engine."
+  references:
+    - "https://portswigger.net/web-security/server-side-template-injection"
+
+- id: ADV-013
+  name: "Internal SSRF via Cloud Instance Identity"
+  severity: CRITICAL
+  cvss: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N"
+  category: SSRF
+  description: "The application is vulnerable to SSRF and can be forced to reach internal cloud service endpoints like the Google Cloud Metadata server (metadata.google.internal)."
+  conditions:
+    - type: and
+      sub:
+        - type: response_match
+          target: responseBody
+          pattern: "computeMetadata/v1"
+        - type: status_code
+          operator: in
+          values: [200]
+  remediation: "Implement a strict allowlist for outbound requests. Block access to internal IP ranges (169.254.169.254, 10.0.0.0/8, etc.)."
+  references:
+    - "https://cloud.google.com/compute/docs/metadata/overview"

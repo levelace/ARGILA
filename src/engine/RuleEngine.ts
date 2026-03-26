@@ -139,7 +139,7 @@ export class RuleEngine {
           return !(this.resolveValue(c.target, r) ?? '').includes(c.value);
 
         case 'header_absent':
-          return !r.responseHeaders?.[c.header.toLowerCase()];
+          return !this.resolveValue(`responseHeaders.${c.header}`, r);
 
         case 'header_value':
           const hv = r.responseHeaders?.[c.header.toLowerCase()] ?? '';

@@ -66,7 +66,8 @@ export class Orchestrator {
     this.emitter.info(`[ASE] Argila Sentinel Engine v3.0 — session ${session.id}`);
     this.emitter.info(`[ASE] Target: ${session.target.host} | Mode: ${session.deepScan ? 'DEEP' : 'SURFACE'} | Stealth: ${session.stealth}`);
 
-    const host = session.target.host.replace(/^https?:\/\//, '').split('/')[0];
+    const fullHost = session.target.host.replace(/^https?:\/\//, '').split('/')[0];
+    const dnsHost = fullHost.split(':')[0]; // Pure hostname for DNS checks
 
     // Phase 1: DNS
     this.emitter.info(`PROGRESS:10`);
@@ -74,9 +75,9 @@ export class Orchestrator {
     try {
       const records: any = {};
       const [a, mx, txt] = await Promise.allSettled([
-        dnsPromises.resolve4(host),
-        dnsPromises.resolveMx(host),
-        dnsPromises.resolveTxt(host)
+        dnsPromises.resolve4(dnsHost),
+        dnsPromises.resolveMx(dnsHost),
+        dnsPromises.resolveTxt(dnsHost)
       ]);
 
       if (a.status === 'fulfilled') {
@@ -104,7 +105,7 @@ export class Orchestrator {
 
     for (const proto of protocols) {
       try {
-        const url = `${proto}://${host}`;
+        const url = `${proto}://${fullHost}`;
         const res = await axios.get(url, { 
           timeout: 5000, 
           validateStatus: () => true,
@@ -116,7 +117,7 @@ export class Orchestrator {
         this.emitter.info(`[HTTP] Server: ${serverHeader}`);
         break;
       } catch (e) {
-        this.emitter.warn(`[HTTP] ${proto}://${host} unreachable.`);
+        this.emitter.warn(`[HTTP] ${proto}://${fullHost} unreachable.`);
       }
     }
 
@@ -128,7 +129,7 @@ export class Orchestrator {
     // Phase 3: WAF Fingerprint
     this.emitter.info(`PROGRESS:30`);
     this.emitter.info(`[PHASE 3] Profiling security perimeter (WAF)...`);
-    const wafVendor = await this.wafProfiler.fingerprint(host, {
+    const wafVendor = await this.wafProfiler.fingerprint(fullHost, {
       get: async (url: string) => {
         const res = await axios.get(url, { 
           timeout: 5000, 
@@ -155,47 +156,122 @@ export class Orchestrator {
     const commonPaths = [
       '/.well-known/openid-configuration',
       '/.well-known/assetlinks.json',
+      '/.git/config',
+      '/.env',
       '/api/v1/health',
+      '/api/v1/users',
+      '/admin',
+      '/administrator',
+      '/login',
       '/authorize',
       '/token',
-      '/callback'
+      '/callback',
+      '/config',
+      '/info.php',
+      '/phpinfo.php',
+      '/.htaccess',
+      '/robots.txt',
+      '/sitemap.xml'
     ];
+
+    if (session.deepScan) {
+      wordlist.push(
+        '/api/v1/admin',
+        '/backup',
+        '/v2/authorize',
+        '/.aws/credentials',
+        '/server-status',
+        '/actuator/health'
+      );
+    }
 
     const probeResults: ProbeResult[] = [];
 
     for (const path of commonPaths) {
       try {
         const url = `${activeUrl}${path}`;
+        this.emitter.info(`[RECON] Probing: ${path}`);
+
+        const headers: Record<string, string> = {
+          'User-Agent': session.stealth
+            ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            : 'Argila-Sentinel-Engine/3.0'
+        };
+
+        if (session.deepScan) {
+          // Hardened Security Bypass Headers
+          headers['X-Forwarded-For'] = '127.0.0.1';
+          headers['X-Originating-IP'] = '127.0.0.1';
+          headers['X-Remote-IP'] = '127.0.0.1';
+          headers['X-Remote-Addr'] = '127.0.0.1';
+          headers['X-Client-IP'] = '127.0.0.1';
+          headers['X-Forwarded-Host'] = 'localhost';
+          headers['X-Original-URL'] = path;
+          headers['X-Rewrite-URL'] = path;
+        }
+
         const res = await axios.get(url, { 
-          timeout: 3000, 
+          timeout: 4000,
           validateStatus: () => true,
-          headers: { 'User-Agent': 'Argila-Sentinel-Engine/3.0' }
+          headers
         });
         
         if (res.status !== 404) {
-          this.emitter.info(`[RECON] Found endpoint: ${path} (Status: ${res.status})`);
+          this.emitter.success(`[RECON] Found endpoint: ${path} (Status: ${res.status})`);
+
+          const params: any = { query: {} };
+          if (path.includes('?')) {
+            const queryPart = path.split('?')[1];
+            queryPart.split('&').forEach(pair => {
+              const [k, v] = pair.split('=');
+              params.query[k] = decodeURIComponent(v || '');
+            });
+          }
+
           probeResults.push({
             probeId: 'recon_discovery',
             endpoint: path,
             statusCode: res.status,
             responseHeaders: res.headers as any,
             responseBody: typeof res.data === 'string' ? res.data : JSON.stringify(res.data),
-            params: { query: {} }
+            params
           });
+
+          // Dynamic Targeted Probing: Trigger specific audits based on discovery
+          if (path.includes('/authorize') || path.includes('/oauth')) {
+            this.emitter.info(`[AUDIT] Potential OAuth endpoint found. Scheduling targeted bypass probe...`);
+            const oauthProbeUrl = `${activeUrl}${path}${path.includes('?') ? '&' : '?'}redirect_uri=https://figma.com.attacker.com/callback`;
+            const oauthRes = await axios.get(oauthProbeUrl, { timeout: 5000, validateStatus: () => true });
+
+            probeResults.push({
+              probeId: 'oauth_redirect_bypass',
+              endpoint: path,
+              statusCode: oauthRes.status,
+              responseHeaders: oauthRes.headers as any,
+              responseBody: typeof oauthRes.data === 'string' ? oauthRes.data : JSON.stringify(oauthRes.data),
+              params: { query: { redirect_uri: 'https://figma.com.attacker.com/callback' } }
+            });
+          }
         }
-      } catch (e) {}
+      } catch (e) {
+        this.emitter.warn(`[RECON] Skip path ${path}: Unreachable or timed out`);
+      } finally {
+        await this.sleep(scanDelay);
+      }
     }
 
     // Phase 5: Vulnerability Analysis
     this.emitter.info(`PROGRESS:60`);
     this.emitter.info(`[PHASE 5] Running rule engine against discovered endpoints...`);
     for (const probe of probeResults) {
+      this.emitter.info(`[AUDIT] Evaluating: ${probe.endpoint} (Probe: ${probe.probeId})`);
       const newFindings = this.ruleEngine.evaluate(probe);
       for (const finding of newFindings) {
         finding.cvssScore = this.scorer.score(finding.cvss);
         this.findings.add(finding);
         this.emitter.success(`[FIND] ${finding.ruleId}: ${finding.name} — CVSS ${finding.cvssScore}`);
       }
+      if (session.deepScan) await this.sleep(100);
     }
 
     // Phase 6: Exploit Chain Correlation
@@ -208,7 +284,7 @@ export class Orchestrator {
 
     const finalResult: ScanResult = {
       sessionId: session.id,
-      target: host,
+      target: fullHost,
       findings: this.findings.all(),
       chains,
       summary: {
