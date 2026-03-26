@@ -96,12 +96,29 @@ export default function App() {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (msg.type === 'LOG') {
-        addTerminalLine(msg.line, msg.level);
+        if (msg.line.startsWith('PROGRESS:')) {
+          const progress = parseInt(msg.line.split(':')[1]);
+          if (!isNaN(progress)) setScanProgress(progress);
+        } else {
+          addTerminalLine(msg.line, msg.level);
+        }
       } else if (msg.type === 'SCAN_COMPLETE') {
         setIsScanning(false);
         setScanProgress(100);
         setFindings(msg.result.findings);
         setChains(msg.result.chains);
+
+        // Populate anomalies
+        const highFindings = msg.result.findings
+          .filter((f: Finding) => f.severity === 'CRITICAL' || f.severity === 'HIGH')
+          .map((f: Finding) => ({
+            id: f.ruleId,
+            type: f.name,
+            severity: f.severity,
+            endpoint: f.endpoint
+          }));
+        setFoundAnomalies(highFindings);
+
         addTerminalLine(`Scan complete. ${msg.result.findings.length} findings identified.`, "success");
       } else if (msg.type === 'EXPLOIT_RESPONSE') {
         setIsExploiting(false);
@@ -147,11 +164,16 @@ export default function App() {
     setFindings([]);
     setChains([]);
     
+    // Ensure host has protocol for backend
+    const host = selectedTarget.host.startsWith('http')
+      ? selectedTarget.host
+      : `https://${selectedTarget.host}`;
+
     wsRef.current.send(JSON.stringify({
       type: 'START_SCAN',
       session: {
         id: `SESSION-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-        target: { host: selectedTarget.host },
+        target: { host },
         deepScan,
         stealth: stealthMode
       }
@@ -166,9 +188,14 @@ export default function App() {
     setExploitResponse(null);
     addTerminalLine(`[PIPE] Initiating manual exploit pipe for ${payload.name}...`, 'info');
     
+    // Ensure host has protocol
+    const host = selectedTarget.host.startsWith('http')
+      ? selectedTarget.host
+      : `https://${selectedTarget.host}`;
+
     wsRef.current.send(JSON.stringify({
       type: 'PIPE_PAYLOAD',
-      url: selectedTarget.host + selectedTarget.endpoints[0],
+      url: host + selectedTarget.endpoints[0],
       payload: payload.content
     }));
   };
